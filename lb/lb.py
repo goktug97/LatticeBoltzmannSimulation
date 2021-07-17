@@ -34,14 +34,27 @@ def calculate_equilibrium_distribution(density, velocity_field):
     return feq
 
 
+def split(array, n, axis, rank):
+    '''Split with padding.'''
+    arrays = np.split(array, n, axis=axis)
+    array = np.concatenate([np.take(arrays[rank-1], [-1], axis=axis),
+        arrays[rank],
+        np.take(arrays[(rank+1) % n], [1], axis=axis)], axis=axis)
+    return array
+
+
+
 class LatticeBoltzmann():
     def __init__(self, density, velocity_field):
-        self.f = calculate_equilibrium_distribution(density, velocity_field)
-        self.density = density
-        self.velocity_field = velocity_field
         comm = MPI.COMM_WORLD
         self.n_workers = comm.Get_size()
         self.rank = comm.Get_rank()
+        self.h, self.w = density.shape
+
+        self.density = split(density, self.n_workers, 0, self.rank)
+        self.velocity_field = split(velocity_field, self.n_workers, 1, self.rank)
+
+        self.f = calculate_equilibrium_distribution(self.density, self.velocity_field)
 
     def stream(self):
         for i in range(9):
@@ -65,6 +78,10 @@ class LatticeBoltzmann():
         self.velocity_field = calculate_velocity_field(self.f, self.density)
         feq = calculate_equilibrium_distribution(self.density, self.velocity_field)
         self.f += 1/tau * (feq - self.f)
+        self._f = np.zeros((self.h, self.w, 9), dtype=np.float32)
+        a = np.ascontiguousarray(self.f[1:-1], dtype=np.float32)
+        MPI.COMM_WORLD.Allgatherv([a, MPI.FLOAT], [self._f, MPI.FLOAT])
+        self.f = split(self._f, self.n_workers, 0, self.rank)
 
     def plot(self):
         v = np.sqrt(self.velocity_field[0]**2 + self.velocity_field[1]**2)

@@ -2,6 +2,7 @@ import numpy as np
 import lb
 import matplotlib.pyplot as plt
 from mpi4py import MPI
+import time
 
 
 nx = 300
@@ -19,13 +20,15 @@ velocity_field[1] = np.sin(2*np.pi/ny*y)
 
 lbs = lb.LatticeBoltzmann(density, velocity_field)
 
+prev_time = time.time()
 for step in range(n_steps):
     lbs.stream()
     lbs.collide()
 
-    if MPI.COMM_WORLD.Get_rank() == 0:
-        if not (step % 10):
-            plt.cla()
-            lbs.plot()
-            plt.pause(0.001)
+    # if MPI.COMM_WORLD.Get_rank() == 0:
+    #     if not (step % 10):
+    #         plt.cla()
+    #         lbs.plot()
+    #         plt.pause(0.001)
 
+print(time.time() - prev_time)
