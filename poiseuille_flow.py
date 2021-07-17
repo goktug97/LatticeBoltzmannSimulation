@@ -67,9 +67,11 @@ for i in range(n_steps):
 
     lbs.collide(tau)
 
+    lbs.update()
+
     # Cylinder
-    lbs.velocity_field[:, cylinder] = 0
-    lbs.f[cylinder] = cylinder_f[:, lb.OPPOSITE_IDXS]
+    lbs.vf[:, cylinder] = 0
+    lbs.f[cylinder, :] = cylinder_f[:, lb.OPPOSITE_IDXS]
 
     # Walls
     lbs.f[bottom_wall] = bottom_f[:, lb.OPPOSITE_IDXS]
@@ -80,6 +82,8 @@ for i in range(n_steps):
 
     # Inlet
     lbs.f[:, 0] = inlet_f
+
+    lbs._f = lb.split(lbs.f, lbs.n_workers, 0, lbs.rank)
 
     if MPI.COMM_WORLD.Get_rank() == 0:
         if not (i % 10):

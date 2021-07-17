@@ -29,19 +29,17 @@ def calculate_equilibrium_distribution(density, velocity_field):
     c_dot_vf = (velocity_field[:, :, :, None] * C.T[:, None, None, :])
     c_dot_vf = np.sum(c_dot_vf, axis=0)
     vf_norm_square = np.sum(velocity_field**2, axis=0)[:, :, None]
-    (1 + 3 * c_dot_vf + 4.5*c_dot_vf**2 - 1.5*vf_norm_square)
     feq = W * (density[:, :, None] * (1 + 3 * c_dot_vf + 4.5*c_dot_vf**2 - 1.5*vf_norm_square))
     return feq
 
 
 def split(array, n, axis, rank):
     '''Split with padding.'''
-    arrays = np.split(array, n, axis=axis)
+    arrays = np.array_split(array, n, axis=axis)
     array = np.concatenate([np.take(arrays[rank-1], [-1], axis=axis),
         arrays[rank],
-        np.take(arrays[(rank+1) % n], [1], axis=axis)], axis=axis)
+        np.take(arrays[(rank+1) % n], [0], axis=axis)], axis=axis)
     return array
-
 
 
 class LatticeBoltzmann():
@@ -53,38 +51,37 @@ class LatticeBoltzmann():
 
         self.density = split(density, self.n_workers, 0, self.rank)
         self.velocity_field = split(velocity_field, self.n_workers, 1, self.rank)
+        self._f = calculate_equilibrium_distribution(self.density, self.velocity_field)
 
-        self.f = calculate_equilibrium_distribution(self.density, self.velocity_field)
+        self.f = np.zeros((self.h, self.w, 9), dtype=np.float32)
+        self.vf = np.zeros((2, self.h, self.w), dtype=np.float32)
+        self.d = np.zeros((self.h, self.w), dtype=np.float32)
+
+        self.update()
 
     def stream(self):
         for i in range(9):
-            self.f[:, :, i] = np.roll(self.f[:, :, i], C[i], axis=(0, 1))
+            self._f[:, :, i] = np.roll(self._f[:, :, i], C[i], axis=(0, 1))
         return
 
-        f = np.transpose(self.f, (1, 2, 0))
-        lattices = np.split(f, self.n_workers, axis=0)
-        lattice = np.concatenate([lattices[self.rank-1][-1:],
-                             lattices[self.rank],
-                             lattices[(self.rank+1) % self.n_workers][:1]], axis=0)
-        for i in range(9):
-            lattice[:, :, i] = np.roll(lattice[:, :, i], C[i], axis=(0, 1))
-        lattice = np.ascontiguousarray(lattice[1:-1], dtype=np.float32)
-        f = np.ascontiguousarray(f, dtype=np.float32)
-        MPI.COMM_WORLD.Allgatherv([lattice, MPI.FLOAT], [f, MPI.FLOAT])
-        self.f = np.transpose(f, (2, 0, 1))
-
     def collide(self, tau=0.6):
-        self.density = calculate_density(self.f)
-        self.velocity_field = calculate_velocity_field(self.f, self.density)
+        self.density = calculate_density(self._f)
+        self.velocity_field = calculate_velocity_field(self._f, self.density)
         feq = calculate_equilibrium_distribution(self.density, self.velocity_field)
-        self.f += 1/tau * (feq - self.f)
-        self._f = np.zeros((self.h, self.w, 9), dtype=np.float32)
-        a = np.ascontiguousarray(self.f[1:-1], dtype=np.float32)
-        MPI.COMM_WORLD.Allgatherv([a, MPI.FLOAT], [self._f, MPI.FLOAT])
-        self.f = split(self._f, self.n_workers, 0, self.rank)
+        self._f += 1/tau * (feq - self._f)
+
+    def update(self):
+        a = np.ascontiguousarray(self._f[1:-1], dtype=np.float32)
+        MPI.COMM_WORLD.Allgatherv([a, MPI.FLOAT], [self.f, MPI.FLOAT])
+
+        a = np.ascontiguousarray(self.velocity_field[:, 1:-1], dtype=np.float32)
+        MPI.COMM_WORLD.Allgatherv([a, MPI.FLOAT], [self.vf, MPI.FLOAT])
+
+        a = np.ascontiguousarray(self.density[1:-1], dtype=np.float32)
+        MPI.COMM_WORLD.Allgatherv([a, MPI.FLOAT], [self.d, MPI.FLOAT])
 
     def plot(self):
-        v = np.sqrt(self.velocity_field[0]**2 + self.velocity_field[1]**2)
+        v = np.sqrt(self.vf[0]**2 + self.vf[1]**2)
         v = np.ma.masked_where((v < 0.0), v)
         plt.imshow(v, cmap = 'RdBu_r', vmin=0, interpolation = 'spline16')
 
