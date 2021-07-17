@@ -16,20 +16,21 @@ OPPOSITE_IDXS.setflags(write=False)
 
 
 def calculate_density(f):
-    density = np.sum(f, axis=0)
+    density = np.sum(f, axis=2)
     return density
 
 
 def calculate_velocity_field(f, density):
-    velocity_field = np.dot(f.T, C).T / (density + np.finfo(float).eps)
-    return velocity_field
+    velocity_field = np.dot(f, C) / (density[:, :, None] + np.finfo(float).eps)
+    return velocity_field.transpose(2, 0, 1)
 
 
 def calculate_equilibrium_distribution(density, velocity_field):
-    c_dot_vf = (velocity_field.T @ C.T).T
-    vf_norm_square = np.sum(velocity_field**2, axis=0)
-    feq = W[:, None, None] * (density * (1 + 3 * c_dot_vf + 4.5*c_dot_vf**2 - 1.5*vf_norm_square))
-    feq = np.ascontiguousarray(feq, dtype=np.float32)
+    c_dot_vf = (velocity_field[:, :, :, None] * C.T[:, None, None, :])
+    c_dot_vf = np.sum(c_dot_vf, axis=0)
+    vf_norm_square = np.sum(velocity_field**2, axis=0)[:, :, None]
+    (1 + 3 * c_dot_vf + 4.5*c_dot_vf**2 - 1.5*vf_norm_square)
+    feq = W * (density[:, :, None] * (1 + 3 * c_dot_vf + 4.5*c_dot_vf**2 - 1.5*vf_norm_square))
     return feq
 
 
@@ -44,7 +45,7 @@ class LatticeBoltzmann():
 
     def stream(self):
         for i in range(9):
-            self.f[i] = np.roll(self.f[i], C[i], axis=(0, 1))
+            self.f[:, :, i] = np.roll(self.f[:, :, i], C[i], axis=(0, 1))
         return
 
         f = np.transpose(self.f, (1, 2, 0))

@@ -58,10 +58,10 @@ for i in range(n_steps):
     if MPI.COMM_WORLD.Get_rank() == 0:
         print(f'{i}\{n_steps}', end="\r")
 
-    bottom_f = lbs.f[:, bottom_wall].copy()
-    top_f = lbs.f[:, top_wall].copy()
-    cylinder_f = lbs.f[:, cylinder].copy()
-    outlet_f = lbs.f[[3, 6, 7], :, -2].copy()
+    bottom_f = lbs.f[bottom_wall].copy()
+    top_f = lbs.f[top_wall].copy()
+    cylinder_f = lbs.f[cylinder].copy()
+    outlet_f = lbs.f[:, -2, [3, 6, 7]].copy()
 
     lbs.stream()
 
@@ -69,22 +69,22 @@ for i in range(n_steps):
 
     # Cylinder
     lbs.velocity_field[:, cylinder] = 0
-    lbs.f[:, cylinder] = cylinder_f[lb.OPPOSITE_IDXS, :]
+    lbs.f[cylinder] = cylinder_f[:, lb.OPPOSITE_IDXS]
 
     # Walls
-    lbs.f[:, bottom_wall] = bottom_f[lb.OPPOSITE_IDXS]
-    lbs.f[:, top_wall] = top_f[lb.OPPOSITE_IDXS]
+    lbs.f[bottom_wall] = bottom_f[:, lb.OPPOSITE_IDXS]
+    lbs.f[top_wall] = top_f[:, lb.OPPOSITE_IDXS]
 
     # Outlet
-    lbs.f[[3, 6, 7], :, -1] = outlet_f
+    lbs.f[:, -1, [3, 6, 7]] = outlet_f
 
     # Inlet
-    lbs.f[:, :, 0] = inlet_f
+    lbs.f[:, 0] = inlet_f
 
-    # if MPI.COMM_WORLD.Get_rank() == 0:
-    #     if not (i % 10):
-    #         plt.cla()
-    #         lbs.plot()
-    #         plt.pause(0.001)
+    if MPI.COMM_WORLD.Get_rank() == 0:
+        if not (i % 10):
+            plt.cla()
+            lbs.plot()
+            plt.pause(0.001)
 
 print(time.time() - prev_time)
