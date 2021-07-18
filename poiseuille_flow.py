@@ -2,10 +2,10 @@ import time
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.animation import MovieWriter, FFMpegWriter
 from mpi4py import MPI
 
 import lb
-
 
 nx = 150
 ny = 100
@@ -17,12 +17,12 @@ tau = 0.5 + viscosity / (1/3)
 # assert 1/tau < 1.7
 
 dt = re * viscosity / nx ** 2
-# n_steps = int(np.floor(8.0/dt))
+n_steps = int(np.floor(8.0/dt))
 
-n_steps = 200
+# n_steps = 200
 
 density = np.ones((ny, nx))
-velocity_field = np.zeros((2, ny, nx))
+velocity_field = np.zeros((ny, nx, 2))
 
 # velocity_field[0, :, 0] += 1
 
@@ -41,8 +41,8 @@ x, y = np.meshgrid(range(nx), range(ny))
 bottom_wall = y == ny - 1
 top_wall = y == 0
 
-v = np.zeros((2, ny, 1))
-v[1] += inlet_velocity
+v = np.zeros((ny, 1, 2))
+v[:, :, 1] += inlet_velocity
 
 # Interesting Experiment
 # v = np.zeros((2, ny, 1))
@@ -52,6 +52,11 @@ inlet_f = lb.calculate_equilibrium_distribution(np.ones((ny, 1)), v).squeeze()
 
 # Place the cylinder a little bit off center to create a nice effect
 cylinder = (x - nx/8)**2 + (y - ny/2.1)**2 < (ny/8)**2
+
+# if MPI.COMM_WORLD.Get_rank() == 0:
+#     fig, ax = plt.subplots()
+#     moviewriter = FFMpegWriter()
+#     moviewriter.setup(fig, 'animation.mp4', dpi=100)
 
 prev_time = time.time()
 for i in range(n_steps):
@@ -67,10 +72,10 @@ for i in range(n_steps):
 
     lbs.collide(tau)
 
-    lbs.update()
+    lbs.gather_f()
 
     # Cylinder
-    lbs.vf[:, cylinder] = 0
+    lbs.velocity_field[cylinder] = 0
     lbs.f[cylinder, :] = cylinder_f[:, lb.OPPOSITE_IDXS]
 
     # Walls
@@ -83,12 +88,18 @@ for i in range(n_steps):
     # Inlet
     lbs.f[:, 0] = inlet_f
 
-    lbs._f = lb.split(lbs.f, lbs.n_workers, 0, lbs.rank)
+    lbs.partial_update_f()
 
-    if MPI.COMM_WORLD.Get_rank() == 0:
-        if not (i % 10):
-            plt.cla()
-            lbs.plot()
-            plt.pause(0.001)
+    # if not (i % 10):
+    #     lbs.gather_velocity_field()
+    #     if MPI.COMM_WORLD.Get_rank() == 0:
+    #         ax.cla()
+    #         lbs.plot(ax=ax)
+    #         # moviewriter.grab_frame()
+    #         plt.pause(0.001)
+
+
+# if MPI.COMM_WORLD.Get_rank() == 0:
+#     moviewriter.finish()
 
 print(time.time() - prev_time)
