@@ -1,66 +1,86 @@
+import time
+import argparse
+
 import numpy as np
-import lb
 import matplotlib.pyplot as plt
 from mpi4py import MPI
 
+import lb
 
-nx = 300
-ny = 300
 
-re = 100
-wall_velocity = 0.1
-viscosity = wall_velocity * nx / re
+parser = argparse.ArgumentParser(description='Poiseuille Flow')
+parser.add_argument('--nx', type=int, default=300, help='Lattice Width')
+parser.add_argument('--ny', type=int, default=300, help='Lattice Height')
+parser.add_argument('--re', type=float, default=100, help='Reynolds Number')
+parser.add_argument('--wall-velocity', type=float, default=0.1)
+parser.add_argument('--n-steps', type=int, default=None,
+        help='Number of simulation steps')
+parser.add_argument('--simulate', dest='simulate', action='store_true')
+parser.set_defaults(simulate=False)
+args = parser.parse_args()
+
+rank = MPI.COMM_WORLD.Get_rank()
+
+viscosity = args.wall_velocity * args.nx / args.re
 tau = 0.5 + viscosity / (1/3)
-print(1/tau)
-assert 1/tau < 1.7
+# assert 1/tau < 1.7
 
-dt = re * viscosity / nx ** 2
-n_steps = int(np.floor(8.0/dt))
+if args.n_steps is None:
+    dt = args.re * viscosity / args.nx ** 2
+    n_steps = int(np.floor(8.0/dt))
+else:
+    n_steps = args.n_steps
 
-density = np.ones((ny, nx))
-velocity_field = np.zeros((2, ny, nx))
+density = np.ones((args.ny, args.nx))
+velocity_field = np.zeros((args.ny, args.nx, 2))
 
 lbs = lb.LatticeBoltzmann(density, velocity_field)
 
-x, y = np.meshgrid(range(nx), range(ny))
-bottom_wall = y == ny - 1
+x, y = np.meshgrid(range(args.nx), range(args.ny))
+bottom_wall = y == args.ny - 1
 top_wall = y == 0
-right_wall = x == nx - 1
+right_wall = x == args.nx - 1
 left_wall = x == 0
-wall_velocity = [0.0, wall_velocity]
+wall_velocity = [0.0, args.wall_velocity]
+
+prev_time = time.time()
 
 for step in range(n_steps):
-    if MPI.COMM_WORLD.Get_rank() == 0:
-        print(f'{step}\{n_steps}', end="\r")
+    if rank == 0:
+        print(f'{step+1}\{n_steps}', end="\r")
 
-    bottom_f = lbs.f[:, bottom_wall].copy()
-    top_f = lbs.f[:, top_wall].copy()
+    bottom_f = lbs.f[bottom_wall].copy()
+    top_f = lbs.f[top_wall].copy()
 
-    left_f = lbs.f[:, left_wall].copy()
-    right_f = lbs.f[:, right_wall].copy()
+    left_f = lbs.f[left_wall].copy()
+    right_f = lbs.f[right_wall].copy()
 
-    lbs.stream()
+    lbs.stream_and_collide(tau)
 
-    lbs.f[:, left_wall] = left_f[lb.OPPOSITE_IDXS]
-    lbs.f[:, right_wall] = right_f[lb.OPPOSITE_IDXS]
-    lbs.f[:, bottom_wall] = bottom_f[lb.OPPOSITE_IDXS]
+    lbs.f[left_wall] = left_f[:, lb.OPPOSITE_IDXS]
+    lbs.f[right_wall] = right_f[:, lb.OPPOSITE_IDXS]
+    lbs.f[bottom_wall] = bottom_f[:, lb.OPPOSITE_IDXS]
 
-    momentum = 6 * (lb.C @ wall_velocity)[:, None] * (lb.W[:, None] * density[None, top_wall])
+    density = lb.calculate_density(lbs.f[top_wall])
+    momentum = 6 * (lb.C @ wall_velocity) * (lb.W * density[:, None])
 
     # This is the correct equation which worked kind of wrong for me?
     # lbs.f[:, top_wall] = top_f[lb.OPPOSITE_IDXS, :] - momentum
 
     # This is the fix?
-    lbs.f[:, top_wall] = top_f[lb.OPPOSITE_IDXS, :] + momentum
+    lbs.f[top_wall] = top_f[:, lb.OPPOSITE_IDXS] + momentum
 
-    lbs.collide(tau)
+    if args.simulate:
+        if not (step % 10):
+            lbs.gather_velocity_field()
+            if rank == 0:
+                plt.cla()
+                lbs.plot()
+                plt.pause(0.001)
 
-    # if MPI.COMM_WORLD.Get_rank() == 0:
-    #     if not (step % 10):
-    #         plt.cla()
-    #         lbs.plot()
-    #         plt.pause(0.001)
+print(f'Core {rank}: Simulation Time: {time.time() - prev_time}')
 
-if MPI.COMM_WORLD.Get_rank() == 0:
-    plt.streamplot(x, y, lbs.velocity_field[1], lbs.velocity_field[0])
+if rank == 0:
+    lbs.gather_velocity_field()
+    plt.streamplot(x, y, lbs.velocity_field[:, :, 1], lbs.velocity_field[:, :, 0])
     plt.show()

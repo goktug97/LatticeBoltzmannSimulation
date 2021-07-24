@@ -16,7 +16,7 @@ OPPOSITE_IDXS.setflags(write=False)
 
 
 def calculate_density(f):
-    density = np.sum(f, axis=2)
+    density = np.sum(f, axis=-1)
     return density
 
 
@@ -58,8 +58,6 @@ class LatticeBoltzmann():
         self.density = np.zeros((self.h, self.w), dtype=np.float32)
 
         self.gather_f()
-        self.gather_density()
-        self.gather_velocity_field()
 
     def stream(self):
         for i in range(9):
@@ -71,6 +69,12 @@ class LatticeBoltzmann():
         self._velocity_field = calculate_velocity_field(self._f, self._density)
         feq = calculate_equilibrium_distribution(self._density, self._velocity_field)
         self._f += 1/tau * (feq - self._f)
+
+    def stream_and_collide(self, tau=0.6):
+        self.partial_update_f()
+        self.stream()
+        self.collide(tau)
+        self.gather_f()
 
     def _gather(self, name):
         array = np.ascontiguousarray(getattr(self, f'_{name}')[1:-1], dtype=np.float32)

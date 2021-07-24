@@ -1,37 +1,66 @@
+import time
+import argparse
+
 import numpy as np
-import lb
 import matplotlib.pyplot as plt
 from mpi4py import MPI
 
+import lb
 
-nx = 50
-ny = 50
-n_steps = 20000
 
-density = np.ones((ny, nx))
-velocity_field = np.zeros((2, ny, nx))
+parser = argparse.ArgumentParser(description='Shear Wave')
+parser.add_argument('--nx', type=int, default=50, help='Lattice Width')
+parser.add_argument('--ny', type=int, default=50, help='Lattice Height')
+parser.add_argument('--wall-velocity', type=float, default=0.1)
+parser.add_argument('--n-steps', type=int, default=100,
+        help='Number of simulation steps')
+parser.add_argument('--simulate', dest='simulate', action='store_true')
+parser.set_defaults(simulate=False)
+
+args = parser.parse_args()
+
+rank = MPI.COMM_WORLD.Get_rank()
+
+density = np.ones((args.ny, args.nx))
+velocity_field = np.zeros((args.ny, args.nx, 2))
 
 lbs = lb.LatticeBoltzmann(density, velocity_field)
 
-x, y = np.meshgrid(range(nx), range(ny))
-bottom_wall = y == ny - 1
+x, y = np.meshgrid(range(args.nx), range(args.ny))
+bottom_wall = y == args.ny - 1
 top_wall = y == 0
-wall_velocity = [0.0, 0.1]
+wall_velocity = [0.0, args.wall_velocity]
 
-for step in range(n_steps):
-    lbs.stream()
+prev_time = time.time()
 
-    bottom_f = lbs.f[:, bottom_wall].copy()
-    top_f = lbs.f[:, top_wall].copy()
+for step in range(args.n_steps):
+    if rank == 0:
+        print(f'{step+1}\{args.n_steps}', end="\r")
 
-    lbs.collide()
+    bottom_f = lbs.f[bottom_wall].copy()
+    top_f = lbs.f[top_wall].copy()
 
-    lbs.f[:, bottom_wall] = bottom_f[lb.OPPOSITE_IDXS]
-    momentum = 6 * (lb.C @ wall_velocity)[:, None] * (lb.W[:, None] * density[None, top_wall])
-    lbs.f[:, top_wall] = top_f[lb.OPPOSITE_IDXS, :] + momentum
+    lbs.stream_and_collide()
 
-    if MPI.COMM_WORLD.Get_rank() == 0:
+    lbs.f[bottom_wall] = bottom_f[:, lb.OPPOSITE_IDXS]
+
+    density = lb.calculate_density(lbs.f[top_wall])
+    momentum = 6 * (lb.C @ wall_velocity) * (lb.W * density[:, None])
+    lbs.f[top_wall] = top_f[:, lb.OPPOSITE_IDXS] + momentum
+
+    if args.simulate:
         if not (step % 10):
-            plt.cla()
-            lbs.plot()
-            plt.pause(0.001)
+            lbs.gather_velocity_field()
+            if rank == 0:
+                plt.cla()
+                lbs.plot()
+                plt.pause(0.001)
+
+print(f'Core {rank}: Simulation Time: {time.time() - prev_time}')
+
+if rank == 0:
+    lbs.gather_velocity_field()
+    plt.streamplot(x, y, lbs.velocity_field[:, :, 1], lbs.velocity_field[:, :, 0])
+    plt.show()
+
+
