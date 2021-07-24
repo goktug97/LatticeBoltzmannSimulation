@@ -57,6 +57,8 @@ class LatticeBoltzmann():
         self.velocity_field = np.zeros((self.h, self.w, 2), dtype=np.float32)
         self.density = np.zeros((self.h, self.w), dtype=np.float32)
 
+        self.boundaries = []
+
         self.gather_f()
 
     def stream(self):
@@ -75,6 +77,16 @@ class LatticeBoltzmann():
         self.stream()
         self.collide(tau)
         self.gather_f()
+
+    def add_boundary(self, boundary):
+        self.boundaries.append(boundary)
+
+    def step(self, tau=0.6):
+        for boundary in self.boundaries:
+            boundary.forward(self.f)
+        self.stream_and_collide(tau)
+        for boundary in self.boundaries:
+            boundary.backward(self.f)
 
     def _gather(self, name):
         array = np.ascontiguousarray(getattr(self, f'_{name}')[1:-1], dtype=np.float32)

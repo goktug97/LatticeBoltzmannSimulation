@@ -47,18 +47,11 @@ x, y = np.meshgrid(range(args.nx), range(args.ny))
 bottom_wall = y == args.ny - 1
 top_wall = y == 0
 
-
 v = np.zeros((args.ny, 1, 2))
 if args.sim_type == 'normal':
     v[:, :, 1] += args.inlet_velocity
 else:
     v[:, 0, 1] = args.inlet_velocity * (1 + np.sin(2*np.pi/args.ny*np.arange(args.ny)))
-
-inlet_f = lb.calculate_equilibrium_distribution(np.ones((args.ny, 1)), v).squeeze()
-
-if args.cylinder:
-    # Place the cylinder a little bit off center to create a nice effect
-    cylinder = (x - args.nx/8)**2 + (y - args.ny/2.1)**2 < (args.ny/8)**2
 
 if rank == 0:
     if args.simulate:
@@ -68,34 +61,22 @@ if rank == 0:
             moviewriter = FFMpegWriter()
             moviewriter.setup(fig, path, dpi=100)
 
+lbs.add_boundary(lb.HorizontalInletOutletBoundary(args.ny, v))
+lbs.add_boundary(lb.WallBoundary(bottom_wall))
+lbs.add_boundary(lb.WallBoundary(top_wall))
+
+if args.cylinder:
+    # Place the cylinder a little bit off center to create a nice effect
+    cylinder = (x - args.nx/8)**2 + (y - args.ny/2.1)**2 < (args.ny/8)**2
+    lbs.add_boundary(lb.WallBoundary(cylinder))
+
 prev_time = time.time()
 
 for step in range(n_steps):
     if rank == 0:
         print(f'{step+1}\{n_steps}', end="\r")
 
-    bottom_f = lbs.f[bottom_wall].copy()
-    top_f = lbs.f[top_wall].copy()
-    if args.cylinder:
-        cylinder_f = lbs.f[cylinder].copy()
-    outlet_f = lbs.f[:, -2, [3, 6, 7]].copy()
-
-    lbs.stream_and_collide(tau)
-
-    # Cylinder
-    if args.cylinder:
-        lbs.velocity_field[cylinder] = 0
-        lbs.f[cylinder, :] = cylinder_f[:, lb.OPPOSITE_IDXS]
-
-    # Walls
-    lbs.f[bottom_wall] = bottom_f[:, lb.OPPOSITE_IDXS]
-    lbs.f[top_wall] = top_f[:, lb.OPPOSITE_IDXS]
-
-    # Outlet
-    lbs.f[:, -1, [3, 6, 7]] = outlet_f
-
-    # Inlet
-    lbs.f[:, 0] = inlet_f
+    lbs.step(tau)
 
     if args.simulate:
         if not (step % 10):

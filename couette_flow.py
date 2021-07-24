@@ -33,20 +33,14 @@ wall_velocity = [0.0, args.wall_velocity]
 
 prev_time = time.time()
 
+lbs.add_boundary(lb.WallBoundary(bottom_wall))
+lbs.add_boundary(lb.MovingWallBoundary(top_wall, wall_velocity))
+
 for step in range(args.n_steps):
     if rank == 0:
         print(f'{step+1}\{args.n_steps}', end="\r")
 
-    bottom_f = lbs.f[bottom_wall].copy()
-    top_f = lbs.f[top_wall].copy()
-
-    lbs.stream_and_collide()
-
-    lbs.f[bottom_wall] = bottom_f[:, lb.OPPOSITE_IDXS]
-
-    density = lb.calculate_density(lbs.f[top_wall])
-    momentum = 6 * (lb.C @ wall_velocity) * (lb.W * density[:, None])
-    lbs.f[top_wall] = top_f[:, lb.OPPOSITE_IDXS] + momentum
+    lbs.step()
 
     if args.simulate:
         if not (step % 10):

@@ -43,32 +43,19 @@ right_wall = x == args.nx - 1
 left_wall = x == 0
 wall_velocity = [0.0, args.wall_velocity]
 
+
+lbs.add_boundary(lb.WallBoundary(bottom_wall))
+lbs.add_boundary(lb.WallBoundary(left_wall))
+lbs.add_boundary(lb.WallBoundary(right_wall))
+lbs.add_boundary(lb.MovingWallBoundary(top_wall, wall_velocity))
+
 prev_time = time.time()
 
 for step in range(n_steps):
     if rank == 0:
         print(f'{step+1}\{n_steps}', end="\r")
 
-    bottom_f = lbs.f[bottom_wall].copy()
-    top_f = lbs.f[top_wall].copy()
-
-    left_f = lbs.f[left_wall].copy()
-    right_f = lbs.f[right_wall].copy()
-
-    lbs.stream_and_collide(tau)
-
-    lbs.f[left_wall] = left_f[:, lb.OPPOSITE_IDXS]
-    lbs.f[right_wall] = right_f[:, lb.OPPOSITE_IDXS]
-    lbs.f[bottom_wall] = bottom_f[:, lb.OPPOSITE_IDXS]
-
-    density = lb.calculate_density(lbs.f[top_wall])
-    momentum = 6 * (lb.C @ wall_velocity) * (lb.W * density[:, None])
-
-    # This is the correct equation which worked kind of wrong for me?
-    # lbs.f[:, top_wall] = top_f[lb.OPPOSITE_IDXS, :] - momentum
-
-    # This is the fix?
-    lbs.f[top_wall] = top_f[:, lb.OPPOSITE_IDXS] + momentum
+    lbs.step(tau)
 
     if args.simulate:
         if not (step % 10):
