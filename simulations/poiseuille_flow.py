@@ -76,7 +76,7 @@ for step in range(n_steps):
     if rank == 0:
         print(f'{step+1}\{n_steps}', end="\r")
 
-    lbs.step(tau)
+    lbs.stream_and_collide(tau)
 
     if args.simulate:
         if not (step % 10):

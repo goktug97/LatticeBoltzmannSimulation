@@ -37,7 +37,7 @@ for step in range(args.n_steps):
     if rank == 0:
         print(f'{step+1}\{args.n_steps}', end="\r")
 
-    lbs.step()
+    lbs.stream_and_collide()
 
     if args.simulate:
         if not (step % 10):
