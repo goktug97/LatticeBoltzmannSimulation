@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpi4py import MPI
 
-from .utils import profile
+from .utils import _split
 
 C = np.ascontiguousarray([[0, 0, 1, 0, -1, 1, 1, -1, -1],  # y
                           [0, 1, 0, -1, 0, 1, -1, -1, 1]]).T  # x
@@ -31,15 +31,6 @@ def calculate_equilibrium_distribution(density, velocity_field):
     vf_norm_square = np.sum(velocity_field**2, axis=2)[:, :, None]
     feq = W * (density[:, :, None] * (1 + 3 * c_dot_vf + 4.5*c_dot_vf**2 - 1.5*vf_norm_square))
     return feq
-
-
-def _split(array, n, axis, rank):
-    '''Split with padding.'''
-    arrays = np.array_split(array, n, axis=axis)
-    array = np.concatenate([np.take(arrays[rank-1], [-1], axis=axis),
-        arrays[rank],
-        np.take(arrays[(rank+1) % n], [0], axis=axis)], axis=axis)
-    return array
 
 
 class LatticeBoltzmann():

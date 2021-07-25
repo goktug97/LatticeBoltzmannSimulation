@@ -1,20 +1,10 @@
-from mpi4py import MPI
-import cProfile
+import numpy as np
 
-def profile(filename=None, comm=MPI.COMM_WORLD):
-  def prof_decorator(f):
-    def wrap_f(*args, **kwargs):
-      pr = cProfile.Profile()
-      pr.enable()
-      result = f(*args, **kwargs)
-      pr.disable()
+def _split(array, n, axis, rank):
+    '''Split with padding.'''
+    arrays = np.array_split(array, n, axis=axis)
+    array = np.concatenate([np.take(arrays[rank-1], [-1], axis=axis),
+        arrays[rank],
+        np.take(arrays[(rank+1) % n], [0], axis=axis)], axis=axis)
+    return array
 
-      if filename is None:
-        pr.print_stats()
-      else:
-        filename_r = filename + ".{}".format(comm.rank)
-        pr.dump_stats(filename_r)
-
-      return result
-    return wrap_f
-  return prof_decorator
