@@ -33,7 +33,7 @@ def calculate_equilibrium_distribution(density, velocity_field):
     return feq
 
 
-def split(array, n, axis, rank):
+def _split(array, n, axis, rank):
     '''Split with padding.'''
     arrays = np.array_split(array, n, axis=axis)
     array = np.concatenate([np.take(arrays[rank-1], [-1], axis=axis),
@@ -47,36 +47,58 @@ class LatticeBoltzmann():
         comm = MPI.COMM_WORLD
         self.n_workers = comm.Get_size()
         self.rank = comm.Get_rank()
+        self._parallel_vars = []
+
+        assert len(density.shape) == 2
+        assert len(velocity_field.shape) == 3
+        assert density.shape == velocity_field.shape[:2]
+        assert velocity_field.shape[2] == 2
+
         self.h, self.w = density.shape
 
-        self._density = split(density, self.n_workers, 0, self.rank)
-        self._velocity_field = split(velocity_field, self.n_workers, 0, self.rank)
-        self._f = calculate_equilibrium_distribution(self._density, self._velocity_field)
+        self._s_density = _split(density, self.n_workers, 0, self.rank)
+        self._s_velocity_field = _split(velocity_field, self.n_workers, 0, self.rank)
+        self._s_f = calculate_equilibrium_distribution(self._s_density, self._s_velocity_field)
 
-        self.f = np.zeros((self.h, self.w, 9), dtype=np.float32)
-        self.velocity_field = np.zeros((self.h, self.w, 2), dtype=np.float32)
-        self.density = np.zeros((self.h, self.w), dtype=np.float32)
+        self._parallel_var('f', np.zeros((self.h, self.w, 9), dtype=np.float32))
+        self._parallel_var('velocity_field', np.zeros((self.h, self.w, 2), dtype=np.float32))
+        self._parallel_var('density', np.zeros((self.h, self.w), dtype=np.float32))
 
         self.boundaries = []
 
-        self.gather_f()
+    def _parallel_var(self, name, value):
+        setattr(self, f'_{name}', value)
+        setattr(self, f'_{name}_calculated', False)
+        setattr(LatticeBoltzmann, name, self._parallel_property(name))
+        setattr(LatticeBoltzmann, f'gather_{name}', lambda self: self._gather(name))
+        self._parallel_vars.append(name)
+
+    @staticmethod
+    def _parallel_property(name):
+        def func(self):
+            if not getattr(self, f'_{name}_calculated'):
+                self._gather(name)
+            return getattr(self, f'_{name}')
+        func.__name__ = name
+        return property(func)
 
     def stream(self):
         for i in range(9):
-            self._f[:, :, i] = np.roll(self._f[:, :, i], C[i], axis=(0, 1))
+            self._s_f[:, :, i] = np.roll(self._s_f[:, :, i], C[i], axis=(0, 1))
         return
 
     def collide(self, tau=0.6):
-        self._density = calculate_density(self._f)
-        self._velocity_field = calculate_velocity_field(self._f, self._density)
-        feq = calculate_equilibrium_distribution(self._density, self._velocity_field)
-        self._f += 1/tau * (feq - self._f)
+        self._s_density = calculate_density(self._s_f)
+        self._s_velocity_field = calculate_velocity_field(self._s_f, self._s_density)
+        feq = calculate_equilibrium_distribution(self._s_density, self._s_velocity_field)
+        self._s_f += 1/tau * (feq - self._s_f)
 
     def stream_and_collide(self, tau=0.6):
-        self.partial_update_f()
+        self._partial_update_f()
         self.stream()
         self.collide(tau)
-        self.gather_f()
+        for parallel_var in self._parallel_vars:
+            setattr(self, f'_{parallel_var}_calculated', False)
 
     def add_boundary(self, boundary):
         self.boundaries.append(boundary)
@@ -89,20 +111,12 @@ class LatticeBoltzmann():
             boundary.backward(self.f)
 
     def _gather(self, name):
-        array = np.ascontiguousarray(getattr(self, f'_{name}')[1:-1], dtype=np.float32)
-        MPI.COMM_WORLD.Allgatherv([array, MPI.FLOAT], [getattr(self, f'{name}'), MPI.FLOAT])
+        array = np.ascontiguousarray(getattr(self, f'_s_{name}')[1:-1], dtype=np.float32)
+        MPI.COMM_WORLD.Allgatherv([array, MPI.FLOAT], [getattr(self, f'_{name}'), MPI.FLOAT])
+        setattr(self, f'_{name}_calculated', True)
 
-    def partial_update_f(self):
-        self._f = split(self.f, self.n_workers, 0, self.rank)
-
-    def gather_f(self):
-        self._gather('f')
-
-    def gather_density(self):
-        self._gather('density')
-
-    def gather_velocity_field(self):
-        self._gather('velocity_field')
+    def _partial_update_f(self):
+        self._s_f = _split(self.f, self.n_workers, 0, self.rank)
 
     def plot(self, ax=None):
         if ax is not None:
@@ -113,8 +127,11 @@ class LatticeBoltzmann():
         v = np.ma.masked_where((v < 0.0), v)
         _plt.imshow(v, cmap = 'RdBu_r', vmin=0, interpolation = 'spline16')
 
-        # vorticity = (np.roll(self.velocity_field[1], -1, axis=0) - np.roll(self.velocity_field[1], 1, axis=0)) - (np.roll(self.velocity_field[0], -1, axis=1) - np.roll(self.velocity_field[0], 1, axis=1))
-        # # vorticity[self.velocity_field.sum(axis=0) == 0] = np.nan
-        # cmap = plt.cm.get_cmap("bwr").copy()
-        # cmap.set_bad('black')
-        # plt.imshow(vorticity, cmap='bwr')
+    def streamplot(self, ax=None):
+        if ax is not None:
+            _plt = ax
+        else:
+            _plt = plt
+        x, y = np.meshgrid(np.arange(self.width), np.arange(self.height))
+        _plt.streamplot(x, y, self.velocity_field[:, :, 1], self.velocity_field[:, :, 0])
+

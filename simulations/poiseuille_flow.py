@@ -44,8 +44,6 @@ velocity_field = np.zeros((args.ny, args.nx, 2))
 lbs = lb.LatticeBoltzmann(density, velocity_field)
 
 x, y = np.meshgrid(range(args.nx), range(args.ny))
-bottom_wall = y == args.ny - 1
-top_wall = y == 0
 
 v = np.zeros((args.ny, 1, 2))
 if args.sim_type == 'normal':
@@ -61,9 +59,11 @@ if rank == 0:
             moviewriter = FFMpegWriter()
             moviewriter.setup(fig, path, dpi=100)
 
-lbs.add_boundary(lb.HorizontalInletOutletBoundary(args.ny, v))
+bottom_wall = y == args.ny - 1
+top_wall = y == 0
 lbs.add_boundary(lb.WallBoundary(bottom_wall))
 lbs.add_boundary(lb.WallBoundary(top_wall))
+lbs.add_boundary(lb.HorizontalInletOutletBoundary(args.ny, v))
 
 if args.cylinder:
     # Place the cylinder a little bit off center to create a nice effect
@@ -86,12 +86,13 @@ for step in range(n_steps):
                 lbs.plot(ax=ax)
                 if args.save_simulation is not None:
                     moviewriter.grab_frame()
-                plt.pause(0.001)
+                else:
+                    plt.pause(0.001)
 
 print(f'Core {rank}: Simulation Time: {time.time() - prev_time}')
 
+lbs.gather_velocity_field()
 if rank == 0:
-    lbs.gather_velocity_field()
     fig, ax = plt.subplots()
     ax.streamplot(x, y, lbs.velocity_field[:, :, 1], lbs.velocity_field[:, :, 0])
     plt.show()
