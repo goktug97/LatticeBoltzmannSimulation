@@ -54,7 +54,7 @@ print(f'Core {rank}: Simulation Time: {time.time() - prev_time}')
 
 lbs.gather_velocity_field()
 if rank == 0:
-    plt.streamplot(x, y, lbs.velocity_field[:, :, 1], lbs.velocity_field[:, :, 0])
+    lbs.streamplot()
     plt.show()
 
 

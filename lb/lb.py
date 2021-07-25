@@ -125,5 +125,5 @@ class LatticeBoltzmann():
             _plt = ax
         else:
             _plt = plt
-        x, y = np.meshgrid(np.arange(self.width), np.arange(self.height))
+        x, y = np.meshgrid(np.arange(self.w), np.arange(self.h))
         _plt.streamplot(x, y, self.velocity_field[:, :, 1], self.velocity_field[:, :, 0])
