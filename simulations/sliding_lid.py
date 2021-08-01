@@ -8,7 +8,7 @@ from mpi4py import MPI
 import lb
 
 
-parser = argparse.ArgumentParser(description='Poiseuille Flow')
+parser = argparse.ArgumentParser(description='Sliding Lid')
 parser.add_argument('--nx', type=int, default=300, help='Lattice Width')
 parser.add_argument('--ny', type=int, default=300, help='Lattice Height')
 parser.add_argument('--re', type=float, default=100, help='Reynolds Number')

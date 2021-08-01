@@ -46,6 +46,8 @@ class LatticeBoltzmann():
 
         self.h, self.w = density.shape
 
+        density, velocity_field = density.astype(np.float32), velocity_field.astype(np.float32)
+
         f = calculate_equilibrium_distribution(density, velocity_field)
 
         self._parallel_var('velocity_field', velocity_field)

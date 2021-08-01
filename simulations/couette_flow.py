@@ -8,7 +8,7 @@ from mpi4py import MPI
 import lb
 
 
-parser = argparse.ArgumentParser(description='Shear Wave')
+parser = argparse.ArgumentParser(description='Couette Flow')
 parser.add_argument('--nx', type=int, default=50, help='Lattice Width')
 parser.add_argument('--ny', type=int, default=50, help='Lattice Height')
 parser.add_argument('--wall-velocity', type=float, default=0.1)
