@@ -2,12 +2,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpi4py import MPI
 
-
-C = np.ascontiguousarray([[0, 0, 1, 0, -1, 1, 1, -1, -1],  # y
-                          [0, 1, 0, -1, 0, 1, -1, -1, 1]]).T  # x
+C = np.ascontiguousarray(
+        np.array([[0, 0, 1, 0, -1, 1, 1, -1, -1],
+                  [0, 1, 0, -1, 0, 1, -1, -1, 1]]).T)
 C.setflags(write=False)
 
-W = np.ascontiguousarray([4/9, 1/9, 1/9, 1/9, 1/9, 1/36, 1/36, 1/36, 1/36]).T
+W = np.ascontiguousarray(
+        np.array([4/9, 1/9, 1/9, 1/9, 1/9, 1/36, 1/36, 1/36, 1/36]).T,
+        dtype=np.float32)
 W.setflags(write=False)
 
 OPPOSITE_IDXS = np.ascontiguousarray([0, 3, 4, 1, 2, 7, 8, 5, 6])
@@ -20,7 +22,7 @@ def calculate_density(f):
 
 
 def calculate_velocity_field(f, density):
-    velocity_field = np.dot(f, C) / (density[:, :, None] + np.finfo(float).eps)
+    velocity_field = np.dot(f, C) / (density[:, :, None] + np.finfo(np.float32).eps)
     return velocity_field
 
 
@@ -82,9 +84,21 @@ class LatticeBoltzmann():
         self.boundaries.append(boundary)
 
     def _gather(self, name):
-        array = np.ascontiguousarray(getattr(self, f'_s_{name}')[1:-1], dtype=np.float32)
-        MPI.COMM_WORLD.Allgatherv([array, MPI.FLOAT], [getattr(self, f'_{name}'), MPI.FLOAT])
+        array = getattr(self, f'_s_{name}')[1:-1]
+        array = np.ascontiguousarray(array, dtype=np.float32)
+        x = getattr(self, f'_{name}')
+        cheight, width, c = x.shape
+        if cheight % self.n_workers:
+            height = cheight + cheight % self.n_workers
+            x = np.ascontiguousarray(np.zeros((height, width, c)), dtype=np.float32)
+            MPI.COMM_WORLD.Allgatherv([array, MPI.FLOAT], [x, MPI.FLOAT])
+            array = getattr(self, f'_{name}')
+            array[:] = x[:cheight]
+        else:
+            MPI.COMM_WORLD.Allgatherv([array, MPI.FLOAT], [x, MPI.FLOAT])
+
         setattr(self, f'_{name}_calculated', True)
+        array = getattr(self, f'_{name}')
 
     def _split(self, array):
         arrays = np.array_split(array, self.n_workers, axis=0)
@@ -118,7 +132,8 @@ class LatticeBoltzmann():
             _plt = ax
         else:
             _plt = plt
-        v = np.sqrt(self.velocity_field[:, :, 0]**2 + self.velocity_field[:, :, 1]**2)
+        v = np.sqrt(self.velocity_field[1:-1, 1:-1, 0]**2 +
+                self.velocity_field[1:-1, 1:-1, 1]**2)
         v = np.ma.masked_where((v < 0.0), v)
         _plt.imshow(v, cmap='RdBu_r', vmin=0, interpolation='spline16')
 
@@ -127,5 +142,6 @@ class LatticeBoltzmann():
             _plt = ax
         else:
             _plt = plt
-        x, y = np.meshgrid(np.arange(self.w), np.arange(self.h))
-        _plt.streamplot(x, y, self.velocity_field[:, :, 1], self.velocity_field[:, :, 0])
+        x, y = np.meshgrid(np.arange(self.w-2), np.arange(self.h-2))
+        _plt.streamplot(x, y, self.velocity_field[1:-1, 1:-1, 1],
+                self.velocity_field[1:-1, 1:-1, 0])

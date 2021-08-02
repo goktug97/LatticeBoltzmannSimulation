@@ -26,24 +26,28 @@ class WallBoundary(Boundary):
         f[self.idxs] = self.cache[:, lb.OPPOSITE_IDXS]
 
 
-class MovingWallBoundary(Boundary):
-    def __init__(self, idxs, wall_velocity):
+class MovingTopWallBoundary(Boundary):
+    def __init__(self, wall_velocity, cs=1/np.sqrt(3)):
         self.wall_velocity = wall_velocity
-        self.idxs = idxs
+        self.cs = cs
 
     def forward(self, f):
-        self.cache = f[self.idxs].copy()
+        self.cache = f[0].copy()
 
     def backward(self, f):
-        density = lb.calculate_density(f[self.idxs])
-        momentum = 6 * (lb.C @ self.wall_velocity) * (lb.W * density[:, None])
-        f[self.idxs] = self.cache[:, lb.OPPOSITE_IDXS] + momentum
+        density = lb.calculate_density(f[0])
+        multiplier = 2 * (1/self.cs) ** 2
+        momentum = multiplier * (lb.C @ self.wall_velocity) * (lb.W * density[:, None])
+
+        f[0, :, 2] = self.cache[:, 4]
+        f[0, :, 5] = self.cache[:, 7] - momentum[:, 7]
+        f[0, :, 6] = self.cache[:, 8] - momentum[:, 8]
 
 
 class HorizontalInletOutletBoundary(Boundary):
     def __init__(self, ny, velocity):
         self.inlet_f = lb.calculate_equilibrium_distribution(
-                np.ones((ny, 1)), velocity).squeeze()
+                np.ones((ny, 1), dtype=np.float32), velocity).squeeze()
 
     def forward(self, f):
         self.cache = f[:, -2, [3, 6, 7]].copy()
