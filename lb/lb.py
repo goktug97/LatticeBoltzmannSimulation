@@ -121,25 +121,17 @@ class LatticeBoltzmann():
         """Update split value of self._f"""
         self._s_f = self._split(self.f)
 
-    def plot(self, ax=None):
+    def plot(self, ax=plt):
         """Plot velocity field."""
-        if ax is not None:
-            _plt = ax
-        else:
-            _plt = plt
         for boundary in self.boundaries:
             boundary.update_velocity(self.velocity_field)
         v = np.sqrt(self.velocity_field[:, :, 0]**2 +
                     self.velocity_field[:, :, 1]**2)
-        _plt.imshow(v, cmap='RdBu_r', vmin=0, interpolation='spline16')
+        ax.imshow(v, cmap='RdBu_r', vmin=0, interpolation='spline16')
 
-    def streamplot(self, ax=None):
+    def streamplot(self, ax=plt):
         """Plot streamplot of the velocity field."""
-        if ax is not None:
-            _plt = ax
-        else:
-            _plt = plt
         for boundary in self.boundaries:
             boundary.update_velocity(self.velocity_field)
         x, y = np.meshgrid(np.arange(self.w), np.arange(self.h))
-        _plt.streamplot(x, y, self.velocity_field[:, :, 1], self.velocity_field[:, :, 0])
+        ax.streamplot(x, y, self.velocity_field[:, :, 1], self.velocity_field[:, :, 0])
